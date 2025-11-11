@@ -75,6 +75,89 @@ const MessageMeta = styled.span`
   margin-top: 6px;
 `;
 
+const DataField = styled.div`
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  margin: 8px 0;
+  padding: 8px 0;
+  border-bottom: 1px solid rgba(0, 0, 0, 0.05);
+
+  &:last-child {
+    border-bottom: none;
+  }
+`;
+
+const FieldIcon = styled.span`
+  font-size: 1.2rem;
+  flex-shrink: 0;
+  margin-top: 2px;
+`;
+
+const FieldContent = styled.div`
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+`;
+
+const FieldLabel = styled.span`
+  font-weight: 600;
+  font-size: 0.85rem;
+  opacity: 0.8;
+`;
+
+const FieldValue = styled.span`
+  font-size: 0.95rem;
+  line-height: 1.5;
+`;
+
+// Função auxiliar para formatar data
+function formatTimestamp(timestamp: string): string {
+  try {
+    const date = new Date(timestamp);
+    if (isNaN(date.getTime())) {
+      return new Date().toLocaleString('pt-BR');
+    }
+    return date.toLocaleString('pt-BR');
+  } catch {
+    return new Date().toLocaleString('pt-BR');
+  }
+}
+
+// Função para fazer download do Excel
+function downloadExcel(base64: string, filename: string) {
+  try {
+    // Converte base64 para bytes
+    const binaryString = window.atob(base64);
+    const bytes = new Uint8Array(binaryString.length);
+    for (let i = 0; i < binaryString.length; i++) {
+      bytes[i] = binaryString.charCodeAt(i);
+    }
+    
+    // Cria blob
+    const blob = new Blob([bytes], {
+      type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
+    });
+    
+    // Cria link temporário e clica nele
+    const url = window.URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = filename;
+    document.body.appendChild(link);
+    link.click();
+    
+    // Limpa
+    document.body.removeChild(link);
+    window.URL.revokeObjectURL(url);
+    
+    console.log(`✅ Download iniciado: ${filename}`);
+  } catch (error) {
+    console.error('❌ Erro ao fazer download do Excel:', error);
+  }
+}
+
 const Form = styled.form`
   display: flex;
   gap: 12px;
@@ -118,14 +201,69 @@ const Button = styled.button`
   }
 `;
 
+// Função para parser e renderizar campos estruturados
+function parseStructuredData(content: string) {
+  // Detecta padrões de campos com ícones (ex: "✅ Título: Always")
+  const fieldPattern = /^([✅📌🎯📝👥📅✨💰🎁📦]+)\s*([^:]+):\s*(.+)$/gm;
+  const matches = [...content.matchAll(fieldPattern)];
+  
+  if (matches.length > 0) {
+    // Tem campos estruturados - renderiza com componentes
+    const parts: (string | JSX.Element)[] = [];
+    let lastIndex = 0;
+    
+    matches.forEach((match, idx) => {
+      const [fullMatch, icon, label, value] = match;
+      const matchIndex = match.index!;
+      
+      // Adiciona texto antes do match
+      if (matchIndex > lastIndex) {
+        const textBefore = content.substring(lastIndex, matchIndex);
+        if (textBefore.trim()) {
+          parts.push(textBefore);
+        }
+      }
+      
+      // Adiciona campo estruturado
+      parts.push(
+        <DataField key={`field-${idx}`}>
+          <FieldIcon>{icon}</FieldIcon>
+          <FieldContent>
+            <FieldLabel>{label}:</FieldLabel>
+            <FieldValue>{value}</FieldValue>
+          </FieldContent>
+        </DataField>
+      );
+      
+      lastIndex = matchIndex + fullMatch.length;
+    });
+    
+    // Adiciona texto restante
+    if (lastIndex < content.length) {
+      const textAfter = content.substring(lastIndex);
+      if (textAfter.trim()) {
+        parts.push(textAfter);
+      }
+    }
+    
+    return <>{parts}</>;
+  }
+  
+  // Não tem campos estruturados, retorna como texto
+  return content;
+}
+
 export function ChatPanel({ messages, onMessagesChange, sessionId, onSessionChange, onPromotionCompleted }: ChatPanelProps) {
   const [input, setInput] = useState("");
   const [isSending, setIsSending] = useState(false);
+  const [currentState, setCurrentState] = useState<any>(null);
   const currentSession = sessionId;
 
   const handleNewPromotion = () => {
     // Limpa as mensagens do chat
     onMessagesChange([]);
+    // Limpa o estado
+    setCurrentState(null);
     // Gera um novo session ID
     const newSessionId = crypto.randomUUID();
     onSessionChange(newSessionId);
@@ -153,7 +291,17 @@ export function ChatPanel({ messages, onMessagesChange, sessionId, onSessionChan
     setIsSending(true);
 
     try {
-      const response = await sendChatMessage(trimmed, currentSession);
+      const response = await sendChatMessage(trimmed, currentSession, currentState);
+
+      // Armazena o estado retornado pelo backend
+      if (response.state) {
+        setCurrentState(response.state);
+        
+        // Se tem Excel no estado, faz download automático
+        if (response.state.data?.excel_base64 && response.state.data?.excel_filename) {
+          downloadExcel(response.state.data.excel_base64, response.state.data.excel_filename);
+        }
+      }
 
       const agentMessage: ChatMessage = {
         id: crypto.randomUUID(),
@@ -192,8 +340,8 @@ export function ChatPanel({ messages, onMessagesChange, sessionId, onSessionChan
       <ScrollArea>
         {messages.map(message => (
           <MessageBubble key={message.id} $origin={message.role}>
-            {message.content}
-            <MessageMeta>{new Date(message.timestamp).toLocaleString()}</MessageMeta>
+            {message.role === "agent" ? parseStructuredData(message.content) : message.content}
+            <MessageMeta>{formatTimestamp(message.timestamp)}</MessageMeta>
           </MessageBubble>
         ))}
       </ScrollArea>

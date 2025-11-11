@@ -191,11 +191,17 @@ Você deve:
 7. **cluster**: Nível CKS do cliente (se mencionado)
    - TRAD / 2-4 CKS / 5-9 CKS / 10+ CKS
 
-8. **segmentacao**: Segmentação adicional
-   - Região (estados, cidades)
-   - Tipo específico de cliente
-   - Nomes de distribuidores/clientes
-   - Combine todas as informações de segmentação
+8. **segmentacao**: Segmentação adicional - **CAMPO OBRIGATÓRIO SE MENCIONADO**
+   - **SEMPRE extraia** informações geográficas (estados, cidades, regiões)
+   - **SEMPRE extraia** tipo de cliente (distribuidores, atacarejo, varejo, redes)
+   - **COMBINE** localização + tipo de cliente
+   - **Exemplos corretos:**
+     * "distribuidores de Manaus" → segmentacao: "Distribuidores de Manaus"
+     * "atacarejo de São Paulo" → segmentacao: "Atacarejo de São Paulo"  
+     * "varejo do Rio de Janeiro" → segmentacao: "Varejo do Rio de Janeiro"
+     * "Brasil todo" → segmentacao: "Brasil"
+     * "estado de Minas Gerais" → segmentacao: "Minas Gerais"
+   - **CRÍTICO**: NÃO deixe vazio se houver menção geográfica ou tipo de cliente
 
 ### Produtos e Categorias:
 9. **categoria**: Família/categoria principal
@@ -237,8 +243,11 @@ Você deve:
 20. **recompensas**: O que o cliente ganha
     - **PARA PROGRESSIVAS**: Liste TODOS os níveis de desconto separados por ponto e vírgula (;)
     - Exemplo progressiva: "5% OFF (mix base); 7% OFF (mix base + Body)"
-    - Para outras mecânicas: Descontos únicos, produtos grátis, brindes, pontos/cashback
+    - **PARA DESCONTO SIMPLES**: Se a promoção é apenas um desconto percentual/valor, esse desconto É a recompensa
+    - Exemplo: Se o texto diz "5% OFF" → recompensas: "5% OFF" ou "5% de desconto"
+    - Para outras mecânicas: Produtos grátis, brindes, pontos/cashback
     - **CRÍTICO**: Em progressivas, NUNCA resuma - liste TODOS os níveis de recompensa
+    - **IMPORTANTE**: O desconto SEMPRE é uma recompensa - não deixe o campo vazio se houver desconto
 
 ### Período / Vigência:
 21. **periodo_inicio**: Data de início (formato: DD/MM/YYYY)
@@ -252,9 +261,15 @@ Você deve:
         - A data MENOR cronologicamente é SEMPRE o período_inicio
         - A data MAIOR cronologicamente é SEMPRE o periodo_fim
       * Se mencionar apenas uma data: assuma como data de início
-    - Se formato for "DD/MM" sem ano: infira o ano baseado na data atual
-    - Se o mês já passou no ano atual, use o próximo ano
-    - Se só mencionar mês: use "01/MM/YYYY" (primeiro dia do mês)
+    - **INFERÊNCIA DE ANO (CRÍTICO):**
+      * Se formato for "DD/MM" sem ano: **SEMPRE use ano FUTURO**
+      * Compare DD/MM com a data atual do sistema
+      * Se DD/MM já passou no ano atual → use ANO SEGUINTE
+      * Se DD/MM ainda não chegou no ano atual → use ANO ATUAL
+      * Exemplo: Se hoje é 10/11/2025 e texto diz "08/03":
+        - 08/03 < 10/11 no calendário → 08/03 já passou em 2025
+        - Portanto use 08/03/2026 (ano seguinte)
+      * Se só mencionar mês: use "01/MM/YYYY" (primeiro dia do mês)
 
 22. **periodo_fim**: Data de término (formato: DD/MM/YYYY)
     - SEMPRE extraia no formato DD/MM/YYYY
