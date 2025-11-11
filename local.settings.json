@@ -1,0 +1,27 @@
+{
+  "IsEncrypted": false,
+  "Values": {
+    "AzureWebJobsStorage": "DefaultEndpointsProtocol=https;EndpointSuffix=core.windows.net;AccountName=promoagentestorage;AccountKey=+ioIh1U3vwyhsUTvV511lilyqwbuUgZP+A2joF39r9TqxUzdfu6RMBHHeMcPHninlpi52riRVa69V+AStGY0RcQ==;BlobEndpoint=https://promoagentestorage.blob.core.windows.net/;FileEndpoint=https://promoagentestorage.file.core.windows.net/;QueueEndpoint=https://promoagentestorage.queue.core.windows.net/;TableEndpoint=https://promoagentestorage.table.core.windows.net/",
+    "FUNCTIONS_WORKER_RUNTIME": "python",
+    
+    "OPENAI_API_KEY": "5e544a24cf2d43e6afc802c809227970",
+    "OPENAI_API_ENDPOINT": "https://eastus.api.cognitive.microsoft.com/",
+    "OPENAI_MODEL": "gpt-4o-mini",
+    
+    "COSMOS_DB_ENDPOINT": "https://promoagente-cosmos.documents.azure.com:443/",
+    "COSMOS_DB_KEY": "eHVxkgnR7sfPwkWn1W6P7KSkKso3lmz5FKrfS1QK8s3XSMofmLoHTkDsPvSj0hoDlasuOlvQwP8oACDbbxp1leA==",
+    
+    "AZURE_STORAGE_CONNECTION_STRING": "DefaultEndpointsProtocol=https;EndpointSuffix=core.windows.net;AccountName=promoagentestorage;AccountKey=+ioIh1U3vwyhsUTvV511lilyqwbuUgZP+A2joF39r9TqxUzdfu6RMBHHeMcPHninlpi52riRVa69V+AStGY0RcQ==;BlobEndpoint=https://promoagentestorage.blob.core.windows.net/;FileEndpoint=https://promoagentestorage.file.core.windows.net/;QueueEndpoint=https://promoagentestorage.queue.core.windows.net/;TableEndpoint=https://promoagentestorage.table.core.windows.net/",
+    
+    "ENVIRONMENT": "development",
+    "DEBUG": "True",
+    "HOST": "localhost",
+    "PORT": "7071"
+  },
+  "Host": {
+    "LocalHttpPort": 7071,
+    "CORS": "*",
+    "CORSCredentials": false
+  },
+  "ConnectionStrings": {}
+}

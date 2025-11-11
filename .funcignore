@@ -1,0 +1,110 @@
+# Arquivos e pastas ignorados no deploy do Azure Functions
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+env/
+venv/
+.venv/
+ENV/
+env.bak/
+venv.bak/
+.conda/
+
+# Distribution / packaging
+.Python
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+
+# IDEs
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# Testes
+.pytest_cache/
+.coverage
+htmlcov/
+test_*.py
+tests/
+
+# Local settings
+local.settings.json
+.env
+
+# Frontend build (não necessário no backend)
+frontend/
+node_modules/
+
+# Documentação (exceto prompts/)
+!prompts/*.md
+DOCS*.md
+BACKUP_GUIDE.md
+CLEANUP_OLD_FILES.md
+DEPLOY_GUIDE.md
+GITHUB_PUSH_GUIDE.md
+GITHUB_SETUP.md
+RAILWAY_FINAL_SETUP.md
+AZURE_FUNCTIONS_SETUP.md
+
+# Scripts auxiliares
+backup_project.py
+cleanup_old_files.py
+start.bat
+start.sh
+start.py
+setup_python311.bat
+
+# Arquivos antigos
+main_old.py
+main_old2.py
+test_*.py
+test_*.html
+
+# Git
+.git/
+.gitignore
+.github/
+
+# Exports temporários
+exports/
+
+# Docker (não usado em Functions)
+Dockerfile
+.dockerignore
+.railway-deploy
+
+# Logs
+*.log
+
+# Database local (usar Azure Storage em produção)
+*.db
+*.sqlite
+*.sqlite3
+
+# Imagens
+*.png
+*.jpg
+*.jpeg
+
+# Core agents antigos (usar apenas functions/)
+agents/
+core/

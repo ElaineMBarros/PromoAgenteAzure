@@ -1,0 +1,571 @@
+"""
+OrchestratorFunction - Azure Function coordenadora
+Gerencia o fluxo completo de criação de promoções
+Coordena ExtractorFunction, ValidatorFunction e SumarizerFunction
+"""
+import logging
+import json
+import os
+import azure.functions as func
+from typing import Dict, Optional
+import httpx
+from datetime import datetime
+import uuid
+from openai import AsyncAzureOpenAI
+import sys
+from pathlib import Path
+
+# Adiciona o diretório raiz ao path
+sys.path.insert(0, str(Path(__file__).parent.parent))
+
+# Import do prompt loader
+try:
+    from shared.utils.prompt_loader import get_persona_prompt
+    PROMPT_LOADER_AVAILABLE = True
+except ImportError as e:
+    logging.warning(f"⚠️ Prompt loader não disponível: {e}")
+    PROMPT_LOADER_AVAILABLE = False
+
+logger = logging.getLogger(__name__)
+
+# Configuração
+# Detecta automaticamente se está no Azure ou local
+FUNCTION_APP_URL = os.environ.get("FUNCTION_APP_URL")
+if not FUNCTION_APP_URL:
+    # Se WEBSITE_HOSTNAME existe, está no Azure
+    website_hostname = os.environ.get("WEBSITE_HOSTNAME")
+    if website_hostname:
+        FUNCTION_APP_URL = f"https://{website_hostname}"
+        logger.info(f"🌐 Rodando no Azure: {FUNCTION_APP_URL}")
+    else:
+        FUNCTION_APP_URL = "http://localhost:7071"
+        logger.info(f"💻 Rodando localmente: {FUNCTION_APP_URL}")
+
+COSMOS_CONNECTION = os.environ.get("COSMOS_CONNECTION_STRING")
+
+# Configuração Azure OpenAI
+AZURE_OPENAI_KEY = os.environ.get("OPENAI_API_KEY")
+AZURE_OPENAI_ENDPOINT = os.environ.get("OPENAI_API_ENDPOINT", "https://eastus.api.cognitive.microsoft.com/")
+AZURE_OPENAI_DEPLOYMENT = os.environ.get("OPENAI_MODEL", "gpt-4o-mini")
+AZURE_OPENAI_API_VERSION = "2024-02-15-preview"
+
+
+class PromoOrchestrator:
+    """Orquestrador do fluxo de promoções"""
+    
+    def __init__(self):
+        self.extractor_url = f"{FUNCTION_APP_URL}/api/extract"
+        self.validator_url = f"{FUNCTION_APP_URL}/api/validate"
+        self.summarizer_url = f"{FUNCTION_APP_URL}/api/summarize"
+        self.export_url = f"{FUNCTION_APP_URL}/api/export"
+    
+    async def _generate_response_with_persona(
+        self,
+        user_message: str,
+        promo_data: Dict,
+        status: str,
+        history: list
+    ) -> str:
+        """
+        Gera resposta usando Azure OpenAI com prompt persona
+        """
+        if not AZURE_OPENAI_KEY:
+            # Fallback para resposta básica
+            return "Olá! Vamos criar uma promoção. Me conte sobre ela!"
+        
+        try:
+            # Carrega prompt persona
+            if PROMPT_LOADER_AVAILABLE:
+                persona_prompt = get_persona_prompt()
+            else:
+                persona_prompt = "Você é um assistente amigável que ajuda a criar promoções."
+            
+            # Monta contexto
+            context = f"""
+Estado atual da promoção:
+- Dados coletados: {json.dumps(promo_data, ensure_ascii=False)}
+- Status: {status}
+- É primeira mensagem: {len(history) <= 1}
+"""
+            
+            # Cliente Azure OpenAI
+            client = AsyncAzureOpenAI(
+                api_key=AZURE_OPENAI_KEY,
+                api_version=AZURE_OPENAI_API_VERSION,
+                azure_endpoint=AZURE_OPENAI_ENDPOINT
+            )
+            
+            # Gera resposta
+            response = await client.chat.completions.create(
+                model=AZURE_OPENAI_DEPLOYMENT,
+                messages=[
+                    {"role": "system", "content": persona_prompt},
+                    {"role": "system", "content": context},
+                    {"role": "user", "content": user_message}
+                ],
+                temperature=0.8,
+                max_tokens=500
+            )
+            
+            return response.choices[0].message.content
+            
+        except Exception as e:
+            logger.error(f"Erro ao gerar resposta com persona: {e}")
+            return "Olá! Vamos criar uma promoção. Me conte sobre ela!"
+    
+    async def process_message(
+        self, 
+        message: str, 
+        session_id: Optional[str] = None,
+        current_state: Optional[Dict] = None
+    ) -> Dict:
+        """
+        Processa mensagem do usuário e orquestra o fluxo
+        
+        Args:
+            message: Mensagem do usuário
+            session_id: ID da sessão (opcional)
+            current_state: Estado atual da promoção (opcional)
+            
+        Returns:
+            Dict com resposta e dados atualizados
+        """
+        # Gera session_id se não fornecido
+        if not session_id:
+            session_id = str(uuid.uuid4())
+            logger.info(f"Nova sessão criada: {session_id}")
+        
+        # Estado inicial
+        if not current_state:
+            current_state = {
+                "session_id": session_id,
+                "status": "draft",
+                "created_at": datetime.utcnow().isoformat(),
+                "data": {},
+                "history": []
+            }
+        
+        # Adiciona mensagem ao histórico
+        current_state["history"].append({
+            "role": "user",
+            "content": message,
+            "timestamp": datetime.utcnow().isoformat()
+        })
+        
+        try:
+            # Detecta comandos especiais
+            message_lower = message.lower().strip()
+            
+            # Comando: gerar excel
+            if "gerar excel" in message_lower or "gerar planilha" in message_lower:
+                logger.info("📊 Comando detectado: gerar excel")
+                if current_state.get("status") == "ready" and current_state.get("data"):
+                    export_result = await self._call_export(current_state["data"])
+                    if export_result.get("success"):
+                        # Armazena o base64 no estado para o frontend processar
+                        current_state["data"]["excel_base64"] = export_result.get("excel_base64")
+                        current_state["data"]["excel_filename"] = export_result.get("filename")
+                        
+                        response = f"""✅ **Excel gerado com sucesso!**
+
+📄 Arquivo: `{export_result.get('filename')}`
+
+💡 **O download iniciará automaticamente!**
+
+Deseja fazer algo mais com esta promoção?"""
+                    else:
+                        response = f"⚠️ Erro ao gerar Excel: {export_result.get('error', 'Erro desconhecido')}"
+                else:
+                    response = "⚠️ A promoção precisa estar completa e validada antes de gerar o Excel. Complete as informações faltantes primeiro."
+                
+                # Adiciona ao histórico e retorna
+                current_state["history"].append({
+                    "role": "assistant",
+                    "content": response,
+                    "timestamp": datetime.utcnow().isoformat()
+                })
+                current_state["updated_at"] = datetime.utcnow().isoformat()
+                
+                return {
+                    "success": True,
+                    "session_id": session_id,
+                    "response": response,
+                    "state": current_state,
+                    "status": current_state["status"]
+                }
+            
+            # 🔒 PROTEÇÃO: Se já está "ready" e mensagem é confirmação, mantém status
+            confirmacao_palavras = ["confirmo", "confirma", "ok", "está bom", "perfeito", "certo", "sim", "correto"]
+            is_confirmacao = any(palavra in message_lower for palavra in confirmacao_palavras)
+            
+            if current_state.get("status") == "ready" and is_confirmacao:
+                logger.info("✅ Status 'ready' + confirmação detectada - mantendo estado")
+                
+                response = f"""✅ **Ótimo! Promoção confirmada e pronta!**
+
+{current_state['data'].get('summary', '')}
+
+**O que deseja fazer?**
+- Digite "gerar excel" para exportar a planilha
+- Digite "enviar" para enviar por email
+- Ou continue refinando os detalhes"""
+                
+                current_state["history"].append({
+                    "role": "assistant",
+                    "content": response,
+                    "timestamp": datetime.utcnow().isoformat()
+                })
+                current_state["updated_at"] = datetime.utcnow().isoformat()
+                
+                return {
+                    "success": True,
+                    "session_id": session_id,
+                    "response": response,
+                    "state": current_state,
+                    "status": "ready"
+                }
+            
+            # PASSO 1: Extrai informações
+            logger.info("🔍 PASSO 1: Extraindo informações")
+            extract_result = await self._call_extractor(message, current_state.get("data"))
+            
+            if not extract_result.get("success"):
+                error_msg = extract_result.get("error", "Erro desconhecido na extração")
+                logger.error(f"❌ Erro na extração: {error_msg}")
+                return {
+                    "success": False,
+                    "session_id": session_id,
+                    "response": f"Desculpe, ocorreu um erro ao processar sua mensagem: {error_msg}",
+                    "state": current_state
+                }
+            
+            # Atualiza dados extraídos
+            extracted_data = extract_result.get("data", {})
+            is_multiple = extract_result.get("is_multiple", False)
+            
+            if is_multiple:
+                logger.info(f"📝 Múltiplas promoções detectadas: {len(extracted_data)}")
+                # Para múltiplas, armazena no metadata
+                current_state["data"]["multiple_promotions"] = extracted_data
+                # Merge inteligente da primeira promoção
+                for key, value in extracted_data[0].items():
+                    if value is not None and value != "":
+                        current_state["data"][key] = value
+            else:
+                # MERGE INTELIGENTE: apenas atualiza campos com valores reais
+                # Preserva dados anteriores se o novo valor for None ou vazio
+                for key, value in extracted_data.items():
+                    if value is not None and value != "":
+                        # Se é lista vazia, não atualiza
+                        if isinstance(value, list) and len(value) == 0:
+                            continue
+                        current_state["data"][key] = value
+                        logger.info(f"📝 Atualizado: {key} = {value}")
+            
+            logger.info(f"✅ Extração concluída - {len(current_state['data'])} campos no estado")
+            
+            # PASSO 2: Decide próximo estado
+            promo_data = current_state["data"]
+            
+            # Verifica se tem informações suficientes
+            # Campos obrigatórios definidos pelo usuário
+            campos_criticos = [
+                "titulo", "mecanica", "descricao", 
+                "periodo_inicio", "periodo_fim",
+                "condicoes", "recompensas", "produtos", "segmentacao"
+            ]
+            campos_preenchidos = [c for c in campos_criticos if promo_data.get(c)]
+            
+            # Só valida se tiver TODOS os campos críticos (9)
+            if len(campos_preenchidos) == 9:
+                # Tem TODOS os campos críticos -> valida
+                logger.info("✅ PASSO 2: Validando promoção")
+                
+                # IMPORTANTE: Envia apenas campos relevantes para validação
+                # Remove campos None e metadatos para não confundir a GPT
+                promo_data_clean = {
+                    k: v for k, v in promo_data.items() 
+                    if v is not None and k not in ['erro', 'summary', 'excel_base64', 'excel_filename', 'multiple_promotions']
+                }
+                
+                validation_result = await self._call_validator(promo_data_clean)
+                
+                if validation_result.get("is_valid"):
+                    # Válida -> cria resumo
+                    logger.info("✅ PASSO 3: Criando resumo")
+                    
+                    summary_result = await self._call_summarizer(promo_data)
+                    current_state["data"]["summary"] = summary_result.get("summary", "")
+                    current_state["status"] = "ready"
+                    
+                    response = f"""✅ **Promoção validada e pronta!**
+
+{summary_result.get('summary', '')}
+
+**Opções:**
+- Digite "gerar excel" para exportar
+- Digite "enviar" para enviar por email
+- Continue refinando os detalhes"""
+                    
+                else:
+                    # Inválida -> informa problemas
+                    issues = validation_result.get("issues", [])
+                    current_state["status"] = "needs_review"
+                    
+                    response = f"""⚠️ **Validação encontrou alguns problemas:**
+
+{validation_result.get('feedback', '')}
+
+**Problemas:**
+{chr(10).join(['- ' + i for i in issues])}
+
+Por favor, forneça as informações faltantes ou corrija os problemas."""
+            else:
+                # Falta informação -> pede mais
+                campos_faltando = [c for c in campos_criticos if not promo_data.get(c)]
+                current_state["status"] = "gathering"
+                
+                # Usa persona APENAS se for REALMENTE a primeira mensagem
+                # (histórico tem apenas 1 item = a mensagem atual do usuário)
+                user_messages_count = len([h for h in current_state["history"] if h.get("role") == "user"])
+                is_first_message = user_messages_count == 1
+                
+                # 🔍 LOGS DE DEBUG
+                logger.info(f"🔍 DEBUG - Total mensagens user: {user_messages_count}")
+                logger.info(f"🔍 DEBUG - is_first_message: {is_first_message}")
+                logger.info(f"🔍 DEBUG - campos_preenchidos: {len(campos_preenchidos)}")
+                logger.info(f"🔍 DEBUG - campos_faltando: {len(campos_faltando)}")
+                
+                # CORREÇÃO: Priorize mostrar dados extraídos sobre usar persona
+                if campos_preenchidos:
+                    # TEM DADOS EXTRAÍDOS -> Mostra sempre, mesmo na primeira mensagem
+                    logger.info(f"📝 Mostrando {len(campos_preenchidos)} campos extraídos")
+                    
+                    # Mostra dados extraídos de forma clara
+                    dados_extraidos = []
+                    if promo_data.get("titulo"):
+                        dados_extraidos.append(f"✅ Título: {promo_data['titulo']}")
+                    if promo_data.get("mecanica"):
+                        dados_extraidos.append(f"✅ Mecânica: {promo_data['mecanica']}")
+                    if promo_data.get("descricao"):
+                        dados_extraidos.append(f"✅ Descrição: {promo_data['descricao']}")
+                    if promo_data.get("desconto_percentual"):
+                        dados_extraidos.append(f"✅ Desconto: {promo_data['desconto_percentual']}%")
+                    if promo_data.get("periodo_inicio"):
+                        dados_extraidos.append(f"✅ Início: {promo_data['periodo_inicio']}")
+                    if promo_data.get("periodo_fim"):
+                        dados_extraidos.append(f"✅ Fim: {promo_data['periodo_fim']}")
+                    if promo_data.get("condicoes"):
+                        dados_extraidos.append(f"✅ Condições: {promo_data['condicoes']}")
+                    
+                    response = f"""📝 **Dados extraídos da sua mensagem:**
+
+{chr(10).join(dados_extraidos)}
+
+⚠️ **Ainda faltam {len(campos_faltando)} campos:** {', '.join(campos_faltando)}
+
+Por favor, complete as informações faltantes."""
+                
+                elif is_first_message:
+                    # PRIMEIRA MENSAGEM SEM DADOS -> Boas-vindas
+                    logger.info("🤖 Gerando boas-vindas com persona (primeira mensagem sem dados)")
+                    response = await self._generate_response_with_persona(
+                        message,
+                        promo_data,
+                        "gathering",
+                        current_state["history"]
+                    )
+                
+                else:
+                    # NÃO É PRIMEIRA MENSAGEM E NÃO TEM DADOS -> Pede clarificação
+                    logger.info("⚠️ Segunda+ mensagem sem dados extraídos - pedindo clarificação")
+                    response = """Não consegui identificar dados da promoção nessa mensagem. 
+
+Por favor, me passe informações como:
+- 📌 **Título** ou nome da promoção
+- 🎯 **Tipo/Mecânica** (progressiva, combo, desconto, etc)
+- 📅 **Período** de validade (início e fim)
+- ✅ **Condições** (quantidades mínimas, produtos, etc)
+- 🎁 **Recompensas** (descontos, brindes, etc)
+- 👥 **Público-alvo** ou segmentação
+
+Pode descrever de forma natural ou estruturada!"""
+            
+            # Adiciona resposta ao histórico
+            current_state["history"].append({
+                "role": "assistant",
+                "content": response,
+                "timestamp": datetime.utcnow().isoformat()
+            })
+            
+            current_state["updated_at"] = datetime.utcnow().isoformat()
+            
+            return {
+                "success": True,
+                "session_id": session_id,
+                "response": response,
+                "state": current_state,
+                "status": current_state["status"]
+            }
+            
+        except Exception as e:
+            logger.error(f"❌ Erro no orquestrador: {str(e)}")
+            return {
+                "success": False,
+                "session_id": session_id,
+                "response": f"Desculpe, ocorreu um erro: {str(e)}",
+                "state": current_state
+            }
+    
+    async def _call_extractor(self, text: str, current_state: Optional[Dict] = None) -> Dict:
+        """Chama ExtractorFunction"""
+        try:
+            async with httpx.AsyncClient(timeout=60.0) as client:
+                response = await client.post(
+                    self.extractor_url,
+                    json={
+                        "text": text,
+                        "current_state": current_state
+                    }
+                )
+                response.raise_for_status()
+                return response.json()
+        except Exception as e:
+            logger.error(f"Erro ao chamar Extractor: {e}")
+            return {"success": False, "error": str(e)}
+    
+    async def _call_validator(self, promo_data: Dict) -> Dict:
+        """Chama ValidatorFunction"""
+        try:
+            async with httpx.AsyncClient(timeout=90.0) as client:
+                response = await client.post(
+                    self.validator_url,
+                    json={"promo_data": promo_data}
+                )
+                response.raise_for_status()
+                return response.json()
+        except Exception as e:
+            logger.error(f"Erro ao chamar Validator: {e}")
+            return {"success": False, "is_valid": False, "error": str(e)}
+    
+    async def _call_summarizer(self, promo_data: Dict, output_type: str = "summary") -> Dict:
+        """Chama SumarizerFunction"""
+        try:
+            async with httpx.AsyncClient(timeout=90.0) as client:
+                response = await client.post(
+                    self.summarizer_url,
+                    json={
+                        "promo_data": promo_data,
+                        "type": output_type
+                    }
+                )
+                response.raise_for_status()
+                
+                if output_type == "email":
+                    return {"email_html": response.text}
+                else:
+                    return response.json()
+        except Exception as e:
+            logger.error(f"Erro ao chamar Summarizer: {e}")
+            return {"success": False, "error": str(e)}
+    
+    async def _call_export(self, promo_data: Dict) -> Dict:
+        """Chama ExportFunction para gerar Excel"""
+        try:
+            async with httpx.AsyncClient(timeout=90.0) as client:
+                response = await client.post(
+                    self.export_url,
+                    json={
+                        "promo_data": promo_data,
+                        "format": "excel"
+                    }
+                )
+                response.raise_for_status()
+                return response.json()
+        except Exception as e:
+            logger.error(f"Erro ao chamar Export: {e}")
+            return {"success": False, "error": str(e)}
+
+
+async def main(req: func.HttpRequest) -> func.HttpResponse:
+    """
+    Azure Function principal - Orchestrator
+    
+    POST /api/orchestrator
+    
+    Request Body:
+    {
+        "message": "Texto do usuário",
+        "session_id": "uuid" (opcional),
+        "current_state": {} (opcional)
+    }
+    
+    Response:
+    {
+        "success": true,
+        "session_id": "uuid",
+        "response": "Resposta para o usuário",
+        "state": {estado completo},
+        "status": "draft|gathering|ready|needs_review"
+    }
+    """
+    logger.info('🎯 OrchestratorFunction: Processando requisição')
+    
+    try:
+        # Parse request
+        req_body = req.get_json()
+        message = req_body.get('message')
+        session_id = req_body.get('session_id')
+        current_state = req_body.get('current_state')
+        
+        if not message:
+            logger.warning("⚠️ Campo 'message' não fornecido")
+            return func.HttpResponse(
+                json.dumps({
+                    "success": False,
+                    "error": "Campo 'message' é obrigatório"
+                }),
+                mimetype="application/json",
+                status_code=400
+            )
+        
+        logger.info(f"💬 Mensagem recebida: {message[:100]}...")
+        if session_id:
+            logger.info(f"📋 Sessão: {session_id}")
+        
+        # Processa mensagem
+        orchestrator = PromoOrchestrator()
+        result = await orchestrator.process_message(message, session_id, current_state)
+        
+        # Log resultado
+        if result.get('success'):
+            logger.info(f"✅ Processamento concluído: {result.get('status')}")
+        else:
+            logger.error(f"❌ Processamento falhou")
+        
+        return func.HttpResponse(
+            json.dumps(result, ensure_ascii=False),
+            mimetype="application/json",
+            status_code=200 if result.get('success') else 500
+        )
+        
+    except ValueError as e:
+        logger.error(f"❌ Erro no parse do JSON: {str(e)}")
+        return func.HttpResponse(
+            json.dumps({
+                "success": False,
+                "error": "JSON inválido no corpo da requisição"
+            }),
+            mimetype="application/json",
+            status_code=400
+        )
+    except Exception as e:
+        logger.error(f"❌ Erro na OrchestratorFunction: {str(e)}")
+        return func.HttpResponse(
+            json.dumps({
+                "success": False,
+                "error": str(e)
+            }),
+            mimetype="application/json",
+            status_code=500
+        )
