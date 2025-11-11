@@ -75,6 +75,19 @@ const MessageMeta = styled.span`
   margin-top: 6px;
 `;
 
+// Função para formatar timestamp com segurança
+function formatTimestamp(timestamp: string): string {
+  try {
+    const date = new Date(timestamp);
+    if (isNaN(date.getTime())) {
+      return new Date().toLocaleString('pt-BR');
+    }
+    return date.toLocaleString('pt-BR');
+  } catch {
+    return new Date().toLocaleString('pt-BR');
+  }
+}
+
 const Form = styled.form`
   display: flex;
   gap: 12px;
@@ -193,7 +206,7 @@ export function ChatPanel({ messages, onMessagesChange, sessionId, onSessionChan
         {messages.map(message => (
           <MessageBubble key={message.id} $origin={message.role}>
             {message.content}
-            <MessageMeta>{new Date(message.timestamp).toLocaleString()}</MessageMeta>
+            <MessageMeta>{formatTimestamp(message.timestamp)}</MessageMeta>
           </MessageBubble>
         ))}
       </ScrollArea>
