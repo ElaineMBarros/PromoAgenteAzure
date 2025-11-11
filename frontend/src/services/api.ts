@@ -6,7 +6,7 @@ const api = axios.create({
 });
 
 export async function sendChatMessage(message: string, sessionId?: string): Promise<ChatResponse> {
-  const response = await api.post<ChatResponse>("/api/chat", {
+  const response = await api.post<ChatResponse>("/api/orchestrator", {
     message,
     session_id: sessionId
   });

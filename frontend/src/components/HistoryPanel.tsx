@@ -56,11 +56,14 @@ export function HistoryPanel({ records }: HistoryPanelProps) {
     );
   }
 
+  // Mostra apenas as 3 últimas promoções
+  const recentRecords = records.slice(-3).reverse();
+
   return (
     <div>
-      <Title>Promoções recentes ({records.length})</Title>
+      <Title>Promoções recentes</Title>
       <PromoList>
-        {records.map(record => (
+        {recentRecords.map(record => (
           <PromoCard key={record.id}>
             <PromoTitle>{record.titulo || "Promoção sem título"}</PromoTitle>
             <PromoMeta>
