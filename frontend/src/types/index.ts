@@ -9,6 +9,8 @@ export interface ChatResponse {
   response: string;
   session_id: string;
   timestamp: string;
+  state?: any;
+  status?: string;
 }
 
 export interface SystemStatus {

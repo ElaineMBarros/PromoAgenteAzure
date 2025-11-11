@@ -27,6 +27,7 @@ function App() {
   const [sessionId, setSessionId] = useState<string | undefined>(() => {
     return localStorage.getItem("promoagente-session") || undefined;
   });
+  const [currentState, setCurrentState] = useState<any>(null);
 
   useEffect(() => {
     const loadStatus = async () => {
@@ -78,6 +79,8 @@ function App() {
             onMessagesChange={setMessages} 
             sessionId={sessionId} 
             onSessionChange={setSessionId}
+            currentState={currentState}
+            onStateChange={setCurrentState}
             onPromotionCompleted={reloadHistory}
           />
         }

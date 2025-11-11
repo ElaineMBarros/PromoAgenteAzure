@@ -5,10 +5,11 @@ const api = axios.create({
   baseURL: import.meta.env.VITE_API_BASE_URL ?? "http://localhost:7000"
 });
 
-export async function sendChatMessage(message: string, sessionId?: string): Promise<ChatResponse> {
+export async function sendChatMessage(message: string, sessionId?: string, currentState?: any): Promise<ChatResponse> {
   const response = await api.post<ChatResponse>("/api/orchestrator", {
     message,
-    session_id: sessionId
+    session_id: sessionId,
+    current_state: currentState
   });
   return response.data;
 }

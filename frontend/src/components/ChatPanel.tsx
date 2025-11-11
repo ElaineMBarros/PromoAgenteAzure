@@ -8,6 +8,8 @@ interface ChatPanelProps {
   onMessagesChange: (messages: ChatMessage[]) => void;
   sessionId?: string;
   onSessionChange: (sessionId: string) => void;
+  currentState?: any;
+  onStateChange?: (state: any) => void;
   onPromotionCompleted?: () => void;
 }
 
@@ -131,7 +133,7 @@ const Button = styled.button`
   }
 `;
 
-export function ChatPanel({ messages, onMessagesChange, sessionId, onSessionChange, onPromotionCompleted }: ChatPanelProps) {
+export function ChatPanel({ messages, onMessagesChange, sessionId, onSessionChange, currentState, onStateChange, onPromotionCompleted }: ChatPanelProps) {
   const [input, setInput] = useState("");
   const [isSending, setIsSending] = useState(false);
   const currentSession = sessionId;
@@ -142,6 +144,10 @@ export function ChatPanel({ messages, onMessagesChange, sessionId, onSessionChan
     // Gera um novo session ID
     const newSessionId = crypto.randomUUID();
     onSessionChange(newSessionId);
+    // Limpa o estado
+    if (onStateChange) {
+      onStateChange(null);
+    }
     // Limpa o localStorage
     localStorage.setItem("promoagente-session", newSessionId);
   };
@@ -166,7 +172,8 @@ export function ChatPanel({ messages, onMessagesChange, sessionId, onSessionChan
     setIsSending(true);
 
     try {
-      const response = await sendChatMessage(trimmed, currentSession);
+      // Envia mensagem COM o estado atual
+      const response = await sendChatMessage(trimmed, currentSession, currentState);
 
       const agentMessage: ChatMessage = {
         id: crypto.randomUUID(),
@@ -176,8 +183,15 @@ export function ChatPanel({ messages, onMessagesChange, sessionId, onSessionChan
       };
 
       onMessagesChange([...updated, agentMessage]);
+      
+      // Atualiza session_id se mudou
       if (response.session_id && response.session_id !== currentSession) {
         onSessionChange(response.session_id);
+      }
+      
+      // Atualiza o estado recebido do backend
+      if (response.state && onStateChange) {
+        onStateChange(response.state);
       }
 
       // Detecta se a promoção foi concluída/salva
