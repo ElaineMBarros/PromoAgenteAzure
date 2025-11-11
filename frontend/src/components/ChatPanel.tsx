@@ -1,4 +1,4 @@
-import { FormEvent, useState } from "react";
+import { FormEvent, useState, useEffect } from "react";
 import styled from "styled-components";
 import { sendChatMessage } from "../services/api";
 import { ChatMessage } from "../types";
@@ -75,6 +75,59 @@ const MessageMeta = styled.span`
   margin-top: 6px;
 `;
 
+// 🎯 AJUSTE 4: Últimas Promoções
+const RecentPromotions = styled.div`
+  background: ${({ theme }) => theme.colors.surface};
+  padding: 16px;
+  border-radius: 12px;
+  margin-bottom: 16px;
+  border: 1px solid rgba(0, 0, 0, 0.08);
+`;
+
+const RecentTitle = styled.h3`
+  font-size: 0.9rem;
+  font-weight: 600;
+  margin-bottom: 12px;
+  color: ${({ theme }) => theme.colors.primary};
+  display: flex;
+  align-items: center;
+  gap: 8px;
+`;
+
+const RecentList = styled.div`
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+`;
+
+const RecentItem = styled.div`
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 12px;
+  background: rgba(31, 60, 136, 0.05);
+  border-radius: 8px;
+  font-size: 0.85rem;
+  cursor: pointer;
+  transition: all 0.2s ease;
+
+  &:hover {
+    background: rgba(31, 60, 136, 0.1);
+    transform: translateX(4px);
+  }
+`;
+
+const RecentIcon = styled.span`
+  font-size: 1.1rem;
+`;
+
+const RecentText = styled.span`
+  flex: 1;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+`;
+
 const DataField = styled.div`
   display: flex;
   align-items: flex-start;
@@ -128,19 +181,16 @@ function formatTimestamp(timestamp: string): string {
 // Função para fazer download do Excel
 function downloadExcel(base64: string, filename: string) {
   try {
-    // Converte base64 para bytes
     const binaryString = window.atob(base64);
     const bytes = new Uint8Array(binaryString.length);
     for (let i = 0; i < binaryString.length; i++) {
       bytes[i] = binaryString.charCodeAt(i);
     }
     
-    // Cria blob
     const blob = new Blob([bytes], {
       type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
     });
     
-    // Cria link temporário e clica nele
     const url = window.URL.createObjectURL(blob);
     const link = document.createElement('a');
     link.href = url;
@@ -148,13 +198,40 @@ function downloadExcel(base64: string, filename: string) {
     document.body.appendChild(link);
     link.click();
     
-    // Limpa
     document.body.removeChild(link);
     window.URL.revokeObjectURL(url);
     
     console.log(`✅ Download iniciado: ${filename}`);
   } catch (error) {
     console.error('❌ Erro ao fazer download do Excel:', error);
+  }
+}
+
+// 🎯 Funções para gerenciar últimas promoções no localStorage
+function saveRecentPromotion(title: string) {
+  try {
+    const recent = localStorage.getItem('recent-promotions');
+    const promotions = recent ? JSON.parse(recent) : [];
+    
+    const newPromotion = { 
+      title, 
+      date: new Date().toLocaleDateString('pt-BR'),
+      timestamp: new Date().toISOString() 
+    };
+    
+    const updated = [newPromotion, ...promotions.filter((p: any) => p.title !== title)].slice(0, 3);
+    localStorage.setItem('recent-promotions', JSON.stringify(updated));
+  } catch (error) {
+    console.error('Erro ao salvar promoção recente:', error);
+  }
+}
+
+function getRecentPromotions(): Array<{ title: string; date: string; timestamp: string }> {
+  try {
+    const recent = localStorage.getItem('recent-promotions');
+    return recent ? JSON.parse(recent) : [];
+  } catch {
+    return [];
   }
 }
 
@@ -203,12 +280,10 @@ const Button = styled.button`
 
 // Função para parser e renderizar campos estruturados
 function parseStructuredData(content: string) {
-  // Detecta padrões de campos com ícones (ex: "✅ Título: Always")
   const fieldPattern = /^([✅📌🎯📝👥📅✨💰🎁📦]+)\s*([^:]+):\s*(.+)$/gm;
   const matches = [...content.matchAll(fieldPattern)];
   
   if (matches.length > 0) {
-    // Tem campos estruturados - renderiza com componentes
     const parts: (string | JSX.Element)[] = [];
     let lastIndex = 0;
     
@@ -216,7 +291,6 @@ function parseStructuredData(content: string) {
       const [fullMatch, icon, label, value] = match;
       const matchIndex = match.index!;
       
-      // Adiciona texto antes do match
       if (matchIndex > lastIndex) {
         const textBefore = content.substring(lastIndex, matchIndex);
         if (textBefore.trim()) {
@@ -224,7 +298,6 @@ function parseStructuredData(content: string) {
         }
       }
       
-      // Adiciona campo estruturado
       parts.push(
         <DataField key={`field-${idx}`}>
           <FieldIcon>{icon}</FieldIcon>
@@ -238,7 +311,6 @@ function parseStructuredData(content: string) {
       lastIndex = matchIndex + fullMatch.length;
     });
     
-    // Adiciona texto restante
     if (lastIndex < content.length) {
       const textAfter = content.substring(lastIndex);
       if (textAfter.trim()) {
@@ -249,7 +321,6 @@ function parseStructuredData(content: string) {
     return <>{parts}</>;
   }
   
-  // Não tem campos estruturados, retorna como texto
   return content;
 }
 
@@ -257,17 +328,19 @@ export function ChatPanel({ messages, onMessagesChange, sessionId, onSessionChan
   const [input, setInput] = useState("");
   const [isSending, setIsSending] = useState(false);
   const [currentState, setCurrentState] = useState<any>(null);
+  const [recentPromotions, setRecentPromotions] = useState<Array<{ title: string; date: string }>>([]);
   const currentSession = sessionId;
 
+  // 🎯 AJUSTE 4: Carrega últimas promoções ao montar
+  useEffect(() => {
+    setRecentPromotions(getRecentPromotions());
+  }, []);
+
   const handleNewPromotion = () => {
-    // Limpa as mensagens do chat
     onMessagesChange([]);
-    // Limpa o estado
     setCurrentState(null);
-    // Gera um novo session ID
     const newSessionId = crypto.randomUUID();
     onSessionChange(newSessionId);
-    // Limpa o localStorage
     localStorage.setItem("promoagente-session", newSessionId);
   };
 
@@ -293,11 +366,15 @@ export function ChatPanel({ messages, onMessagesChange, sessionId, onSessionChan
     try {
       const response = await sendChatMessage(trimmed, currentSession, currentState);
 
-      // Armazena o estado retornado pelo backend
       if (response.state) {
         setCurrentState(response.state);
         
-        // Se tem Excel no estado, faz download automático
+        // 🎯 AJUSTE 4: Salva promoção recente quando tem título
+        if (response.state.data?.titulo) {
+          saveRecentPromotion(response.state.data.titulo);
+          setRecentPromotions(getRecentPromotions());
+        }
+        
         if (response.state.data?.excel_base64 && response.state.data?.excel_filename) {
           downloadExcel(response.state.data.excel_base64, response.state.data.excel_filename);
         }
@@ -315,9 +392,7 @@ export function ChatPanel({ messages, onMessagesChange, sessionId, onSessionChan
         onSessionChange(response.session_id);
       }
 
-      // Detecta se a promoção foi concluída/salva
       if (onPromotionCompleted && (response.response.includes("Promoção enviada com sucesso") || response.response.includes("Promoção salva no sistema"))) {
-        // Aguarda um pouco para garantir que o backend salvou
         setTimeout(() => {
           onPromotionCompleted();
         }, 500);
@@ -337,6 +412,26 @@ export function ChatPanel({ messages, onMessagesChange, sessionId, onSessionChan
           ✨ Nova Promoção
         </NewPromotionButton>
       </ChatHeader>
+
+      {/* 🎯 AJUSTE 4: Mostra últimas 3 promoções se houver */}
+      {recentPromotions.length > 0 && (
+        <RecentPromotions>
+          <RecentTitle>
+            <span>🕐</span>
+            Últimas promoções
+          </RecentTitle>
+          <RecentList>
+            {recentPromotions.map((promo, idx) => (
+              <RecentItem key={idx}>
+                <RecentIcon>📦</RecentIcon>
+                <RecentText>{promo.title}</RecentText>
+                <span style={{ fontSize: '0.75rem', opacity: 0.7 }}>{promo.date}</span>
+              </RecentItem>
+            ))}
+          </RecentList>
+        </RecentPromotions>
+      )}
+
       <ScrollArea>
         {messages.map(message => (
           <MessageBubble key={message.id} $origin={message.role}>
@@ -345,6 +440,7 @@ export function ChatPanel({ messages, onMessagesChange, sessionId, onSessionChan
           </MessageBubble>
         ))}
       </ScrollArea>
+      
       <Form onSubmit={handleSubmit}>
         <Input
           value={input}
