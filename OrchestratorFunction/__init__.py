@@ -274,7 +274,9 @@ Deseja fazer algo mais com esta promoção?"""
                 "periodo_inicio", "periodo_fim",
                 "condicoes", "recompensas", "produtos", "segmentacao"
             ]
+            # ✅ CORREÇÃO: Verifica campos no ESTADO COMPLETO, não só na mensagem atual
             campos_preenchidos = [c for c in campos_criticos if promo_data.get(c)]
+            campos_faltando = [c for c in campos_criticos if not promo_data.get(c)]
             
             # Só valida se tiver TODOS os campos críticos (9)
             if len(campos_preenchidos) == 9:
@@ -322,7 +324,6 @@ Deseja fazer algo mais com esta promoção?"""
 Por favor, forneça as informações faltantes ou corrija os problemas."""
             else:
                 # Falta informação -> pede mais
-                campos_faltando = [c for c in campos_criticos if not promo_data.get(c)]
                 current_state["status"] = "gathering"
                 
                 # Usa persona APENAS se for REALMENTE a primeira mensagem
@@ -336,12 +337,12 @@ Por favor, forneça as informações faltantes ou corrija os problemas."""
                 logger.info(f"🔍 DEBUG - campos_preenchidos: {len(campos_preenchidos)}")
                 logger.info(f"🔍 DEBUG - campos_faltando: {len(campos_faltando)}")
                 
-                # CORREÇÃO: Priorize mostrar dados extraídos sobre usar persona
+                # ✅ CORREÇÃO: SEMPRE mostra dados se tem algo no estado
                 if campos_preenchidos:
-                    # TEM DADOS EXTRAÍDOS -> Mostra sempre, mesmo na primeira mensagem
-                    logger.info(f"📝 Mostrando {len(campos_preenchidos)} campos extraídos")
+                    # TEM DADOS NO ESTADO -> Mostra progresso
+                    logger.info(f"📝 Mostrando {len(campos_preenchidos)} campos preenchidos")
                     
-                    # Mostra dados extraídos de forma clara
+                    # Mostra dados coletados até agora
                     dados_extraidos = []
                     if promo_data.get("titulo"):
                         dados_extraidos.append(f"✅ Título: {promo_data['titulo']}")
@@ -357,14 +358,28 @@ Por favor, forneça as informações faltantes ou corrija os problemas."""
                         dados_extraidos.append(f"✅ Fim: {promo_data['periodo_fim']}")
                     if promo_data.get("condicoes"):
                         dados_extraidos.append(f"✅ Condições: {promo_data['condicoes']}")
+                    if promo_data.get("recompensas"):
+                        dados_extraidos.append(f"✅ Recompensas: {promo_data['recompensas']}")
+                    if promo_data.get("produtos"):
+                        produtos_str = promo_data['produtos'] if isinstance(promo_data['produtos'], str) else ', '.join(promo_data['produtos'])
+                        dados_extraidos.append(f"✅ Produtos: {produtos_str}")
+                    if promo_data.get("segmentacao"):
+                        dados_extraidos.append(f"✅ Segmentação: {promo_data['segmentacao']}")
                     
-                    response = f"""📝 **Dados extraídos da sua mensagem:**
+                    if len(campos_faltando) > 0:
+                        response = f"""📝 **Dados coletados até agora:**
 
 {chr(10).join(dados_extraidos)}
 
 ⚠️ **Ainda faltam {len(campos_faltando)} campos:** {', '.join(campos_faltando)}
 
 Por favor, complete as informações faltantes."""
+                    else:
+                        response = f"""📝 **Todos os dados coletados!**
+
+{chr(10).join(dados_extraidos)}
+
+Validando promoção..."""
                 
                 elif is_first_message:
                     # PRIMEIRA MENSAGEM SEM DADOS -> Boas-vindas
