@@ -59,6 +59,73 @@ class PromoOrchestrator:
         self.summarizer_url = f"{FUNCTION_APP_URL}/api/summarize"
         self.export_url = f"{FUNCTION_APP_URL}/api/export"
     
+    def _validate_date_immediately(self, promo_data: Dict) -> Optional[str]:
+        """
+        Valida data IMEDIATAMENTE após extração
+        Retorna mensagem de erro se data inválida, None se OK
+        """
+        periodo_inicio = promo_data.get("periodo_inicio")
+        if not periodo_inicio:
+            return None
+        
+        try:
+            from datetime import datetime
+            hoje = datetime.now()
+            
+            # Tenta parsear diferentes formatos
+            data_inicio = None
+            
+            # Formato DD/MM/YYYY
+            if len(periodo_inicio) == 10 and '/' in periodo_inicio:
+                try:
+                    data_inicio = datetime.strptime(periodo_inicio, "%d/%m/%Y")
+                except:
+                    pass
+            
+            # Formato DD/MM (assume ano atual)
+            if not data_inicio and len(periodo_inicio) == 5 and '/' in periodo_inicio:
+                try:
+                    dia, mes = periodo_inicio.split('/')
+                    data_inicio = datetime(hoje.year, int(mes), int(dia))
+                except:
+                    pass
+            
+            # Se conseguiu parsear, valida
+            if data_inicio:
+                # Data no passado
+                if data_inicio.date() < hoje.date():
+                    # Mesmo mês mas dia passou
+                    if data_inicio.month == hoje.month and data_inicio.year == hoje.year:
+                        return f"""⚠️ **Data inválida detectada!**
+
+A data de início ({periodo_inicio}) já passou. Estamos em {hoje.strftime('%d/%m/%Y')}.
+
+Por favor, informe uma nova data a partir de hoje ou posterior."""
+                    
+                    # Mês passado - sugere ano seguinte
+                    elif data_inicio.month < hoje.month and data_inicio.year == hoje.year:
+                        nova_data = periodo_inicio.replace(str(hoje.year), str(hoje.year + 1))
+                        return f"""💡 **Ajuste de data sugerido**
+
+Detectei que a data ({periodo_inicio}) está no passado.
+
+Sugiro ajustar para **{nova_data}** (ano seguinte). Confirma essa mudança?"""
+                    
+                    # Ano passado
+                    elif data_inicio.year < hoje.year:
+                        nova_data = periodo_inicio.replace(str(data_inicio.year), str(hoje.year + 1))
+                        return f"""💡 **Ajuste de data sugerido**
+
+Detectei que a data ({periodo_inicio}) está no ano passado.
+
+Sugiro ajustar para **{nova_data}**. Confirma?"""
+            
+            return None
+            
+        except Exception as e:
+            logger.warning(f"Erro ao validar data: {e}")
+            return None
+    
     async def _generate_response_with_persona(
         self,
         user_message: str,
@@ -263,8 +330,30 @@ Deseja fazer algo mais com esta promoção?"""
             
             logger.info(f"✅ Extração concluída - {len(current_state['data'])} campos no estado")
             
-            # PASSO 2: Decide próximo estado
+            # ✅ VALIDAÇÃO IMEDIATA DE DATA
             promo_data = current_state["data"]
+            date_error = self._validate_date_immediately(promo_data)
+            if date_error:
+                logger.warning(f"⚠️ Data inválida detectada imediatamente")
+                current_state["status"] = "needs_review"
+                
+                # Retorna erro de data IMEDIATAMENTE
+                current_state["history"].append({
+                    "role": "assistant",
+                    "content": date_error,
+                    "timestamp": datetime.utcnow().isoformat()
+                })
+                current_state["updated_at"] = datetime.utcnow().isoformat()
+                
+                return {
+                    "success": True,
+                    "session_id": session_id,
+                    "response": date_error,
+                    "state": current_state,
+                    "status": "needs_review"
+                }
+            
+            # PASSO 2: Decide próximo estado (SE DATA OK)
             
             # Verifica se tem informações suficientes
             # Campos obrigatórios definidos pelo usuário
