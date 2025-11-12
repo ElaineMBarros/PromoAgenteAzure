@@ -58,8 +58,8 @@ def get_extraction_prompt() -> str:
 
 
 def get_validation_prompt() -> str:
-    """Carrega o prompt de validação"""
-    return load_prompt("validation", inject_date=False)
+    """Carrega o prompt de validação com data atual injetada"""
+    return load_prompt("validation", inject_date=True)
 
 
 def get_summarization_prompt() -> str:
