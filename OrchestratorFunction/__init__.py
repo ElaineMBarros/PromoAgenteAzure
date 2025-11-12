@@ -314,6 +314,15 @@ Deseja fazer algo mais com esta promoção?"""
                     issues = validation_result.get("issues", [])
                     current_state["status"] = "needs_review"
                     
+                    # ✅ FALLBACK: Se issues está vazio mas validação falhou, usa feedback
+                    if not issues:
+                        feedback_text = validation_result.get('feedback', 'Validação reprovou mas não especificou os problemas')
+                        if feedback_text:
+                            issues = [feedback_text]
+                        else:
+                            issues = ["Validação reprovou - verifique os dados da promoção"]
+                        logger.warning(f"⚠️ Validator retornou issues vazio, usando fallback")
+                    
                     response = f"""⚠️ **Validação encontrou alguns problemas:**
 
 {validation_result.get('feedback', '')}
