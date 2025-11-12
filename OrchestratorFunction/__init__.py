@@ -207,8 +207,7 @@ Deseja fazer algo mais com esta promoção?"""
 
 **O que deseja fazer?**
 - Digite "gerar excel" para exportar a planilha
-- Digite "enviar" para enviar por email
-- Ou continue refinando os detalhes"""
+- Continue refinando os detalhes se necessário"""
                 
                 current_state["history"].append({
                     "role": "assistant",
@@ -305,9 +304,8 @@ Deseja fazer algo mais com esta promoção?"""
 {summary_result.get('summary', '')}
 
 **Opções:**
-- Digite "gerar excel" para exportar
-- Digite "enviar" para enviar por email
-- Continue refinando os detalhes"""
+- Digite "gerar excel" para exportar a planilha
+- Continue refinando os detalhes se necessário"""
                     
                 else:
                     # Inválida -> informa problemas
