@@ -1,5 +1,6 @@
 import { FormEvent, useState, useEffect } from "react";
 import styled from "styled-components";
+import ReactMarkdown from "react-markdown";
 import { sendChatMessage } from "../services/api";
 import { ChatMessage } from "../types";
 
@@ -68,6 +69,34 @@ const MessageBubble = styled.div<{ $origin: "user" | "agent" }>`
   line-height: 1.6;
   box-shadow: 0 10px 20px rgba(0, 0, 0, 0.08);
   border: ${({ $origin, theme }) => ($origin === "agent" ? `1px solid ${theme.colors.muted}33` : "none")};
+  
+  /* Estilos para markdown renderizado */
+  p {
+    margin: 0.5em 0;
+    &:first-child {
+      margin-top: 0;
+    }
+    &:last-child {
+      margin-bottom: 0;
+    }
+  }
+  
+  strong {
+    font-weight: 600;
+  }
+  
+  ul, ol {
+    margin: 0.5em 0;
+    padding-left: 1.5em;
+  }
+  
+  code {
+    background: rgba(0, 0, 0, 0.1);
+    padding: 2px 6px;
+    border-radius: 4px;
+    font-family: monospace;
+    font-size: 0.9em;
+  }
 `;
 
 const MessageMeta = styled.span`
@@ -267,7 +296,7 @@ export function ChatPanel({ messages, onMessagesChange, sessionId, onSessionChan
       <ScrollArea>
         {messages.map(message => (
           <MessageBubble key={message.id} $origin={message.role}>
-            {message.content}
+            <ReactMarkdown>{message.content}</ReactMarkdown>
             <MessageMeta>{formatTimestamp(message.timestamp)}</MessageMeta>
           </MessageBubble>
         ))}
