@@ -27,6 +27,8 @@ export interface SystemStatus {
   summarizer: boolean;
   memory_manager: boolean;
   sqlite_db: boolean;
+  cosmos_db: boolean;
+  blob_storage: boolean;
   messages_stored: number;
   promotions_count: number;
   python_version: string;

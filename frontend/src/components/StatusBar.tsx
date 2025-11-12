@@ -63,7 +63,7 @@ export function StatusBar({ status }: StatusBarProps) {
       </Brand>
       <StatusList>
         <StatusItem $online={Boolean(status?.openai)}>OpenAI</StatusItem>
-        <StatusItem $online={Boolean(status?.sqlite_db)}>SQLite</StatusItem>
+        <StatusItem $online={Boolean(status?.cosmos_db)}>Cosmos DB</StatusItem>
       </StatusList>
     </HeaderWrapper>
   );
