@@ -26,6 +26,15 @@ except ImportError as e:
     logging.warning(f"⚠️ Prompt loader não disponível: {e}")
     PROMPT_LOADER_AVAILABLE = False
 
+# Import do cosmos adapter
+try:
+    from shared.adapters.cosmos_adapter import cosmos_adapter
+    COSMOS_ADAPTER_AVAILABLE = True
+except ImportError as e:
+    logging.warning(f"⚠️ Cosmos adapter não disponível: {e}")
+    COSMOS_ADAPTER_AVAILABLE = False
+    cosmos_adapter = None
+
 logger = logging.getLogger(__name__)
 
 # Configuração
@@ -387,6 +396,20 @@ Deseja fazer algo mais com esta promoção?"""
                     summary_result = await self._call_summarizer(promo_data)
                     current_state["data"]["summary"] = summary_result.get("summary", "")
                     current_state["status"] = "ready"
+                    
+                    # ✅ SALVA PROMOÇÃO NO COSMOS DB
+                    if COSMOS_ADAPTER_AVAILABLE and cosmos_adapter and cosmos_adapter.client:
+                        try:
+                            # Adiciona promo_id se não existir
+                            if not promo_data.get("promo_id"):
+                                promo_data["promo_id"] = f"promo_{session_id}_{int(datetime.utcnow().timestamp())}"
+                            
+                            await cosmos_adapter.save_promotion(promo_data)
+                            logger.info(f"💾 Promoção salva no Cosmos DB: {promo_data.get('titulo', 'sem título')}")
+                        except Exception as e:
+                            logger.error(f"❌ Erro ao salvar promoção no Cosmos DB: {e}")
+                    else:
+                        logger.warning("⚠️ Cosmos DB não disponível - promoção não foi salva")
                     
                     response = f"""✅ **Promoção validada e pronta!**
 
