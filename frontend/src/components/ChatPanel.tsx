@@ -1,4 +1,4 @@
-import { FormEvent, useState } from "react";
+import { FormEvent, useState, useEffect } from "react";
 import styled from "styled-components";
 import { sendChatMessage } from "../services/api";
 import { ChatMessage } from "../types";
@@ -137,6 +137,54 @@ export function ChatPanel({ messages, onMessagesChange, sessionId, onSessionChan
   const [input, setInput] = useState("");
   const [isSending, setIsSending] = useState(false);
   const currentSession = sessionId;
+
+  // Função para fazer download do Excel
+  const downloadExcel = (base64: string, filename: string) => {
+    try {
+      // Converte base64 para blob
+      const byteCharacters = atob(base64);
+      const byteNumbers = new Array(byteCharacters.length);
+      for (let i = 0; i < byteCharacters.length; i++) {
+        byteNumbers[i] = byteCharacters.charCodeAt(i);
+      }
+      const byteArray = new Uint8Array(byteNumbers);
+      const blob = new Blob([byteArray], { 
+        type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' 
+      });
+
+      // Cria link de download
+      const url = window.URL.createObjectURL(blob);
+      const link = document.createElement('a');
+      link.href = url;
+      link.download = filename;
+      document.body.appendChild(link);
+      link.click();
+      
+      // Cleanup
+      document.body.removeChild(link);
+      window.URL.revokeObjectURL(url);
+      
+      console.log('✅ Download do Excel iniciado:', filename);
+    } catch (error) {
+      console.error('❌ Erro ao fazer download do Excel:', error);
+    }
+  };
+
+  // Monitora mudanças no estado para detectar excel_base64
+  useEffect(() => {
+    if (currentState?.data?.excel_base64 && currentState?.data?.excel_filename) {
+      console.log('📊 Excel detectado no estado, iniciando download...');
+      downloadExcel(currentState.data.excel_base64, currentState.data.excel_filename);
+      
+      // Remove o excel do estado após download para não baixar novamente
+      if (onStateChange) {
+        const newState = { ...currentState };
+        delete newState.data.excel_base64;
+        delete newState.data.excel_filename;
+        onStateChange(newState);
+      }
+    }
+  }, [currentState]);
 
   const handleNewPromotion = () => {
     // Limpa as mensagens do chat
