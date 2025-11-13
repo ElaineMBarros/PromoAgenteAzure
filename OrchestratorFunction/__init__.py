@@ -399,19 +399,36 @@ Deseja fazer algo mais com esta promoção?"""
                     
                     # ✅ SALVA PROMOÇÃO NO COSMOS DB
                     if COSMOS_ADAPTER_AVAILABLE and cosmos_adapter and cosmos_adapter.client:
-                        try:
-                            # Adiciona promo_id se não existir
-                            if not promo_data.get("promo_id"):
-                                promo_data["promo_id"] = f"promo_{session_id}_{int(datetime.utcnow().timestamp())}"
-                            
-                            await cosmos_adapter.save_promotion(promo_data)
-                            logger.info(f"💾 Promoção salva no Cosmos DB: {promo_data.get('titulo', 'sem título')}")
-                        except Exception as e:
-                            logger.error(f"❌ Erro ao salvar promoção no Cosmos DB: {e}")
-                    else:
-                        logger.warning("⚠️ Cosmos DB não disponível - promoção não foi salva")
-                    
-                    response = f"""✅ **Promoção validada e pronta!**
+                      # ✅ SALVA PROMOÇÃO NO COSMOS DB
+logger.info("=" * 70)
+logger.info("🔍 DEBUG SALVAMENTO:")
+logger.info(f"   COSMOS_ADAPTER_AVAILABLE: {COSMOS_ADAPTER_AVAILABLE}")
+logger.info(f"   cosmos_adapter: {cosmos_adapter}")
+logger.info(f"   cosmos_adapter.client: {cosmos_adapter.client if cosmos_adapter else 'N/A'}")
+logger.info("=" * 70)
+
+if COSMOS_ADAPTER_AVAILABLE and cosmos_adapter and cosmos_adapter.client:
+    try:
+        if not promo_data.get("promo_id"):
+            promo_data["promo_id"] = f"promo_{session_id}_{int(datetime.utcnow().timestamp())}"
+        
+        logger.info(f"💾 Tentando salvar: {promo_data.get('titulo', 'sem título')}")
+        await cosmos_adapter.save_promotion(promo_data)
+        logger.info(f"✅ Promoção salva no Cosmos DB")
+    except Exception as e:
+        logger.error(f"❌ Erro ao salvar: {e}")
+        import traceback
+        logger.error(traceback.format_exc())
+else:
+    logger.warning("=" * 70)
+    logger.warning("⚠️ COSMOS DB NÃO DISPONÍVEL")
+    logger.warning(f"   COSMOS_ADAPTER_AVAILABLE = {COSMOS_ADAPTER_AVAILABLE}")
+    if not cosmos_adapter:
+        logger.warning("   cosmos_adapter = None")
+    elif not cosmos_adapter.client:
+        logger.warning("   cosmos_adapter.client = None")
+    logger.warning("=" * 70)
+
 
 {summary_result.get('summary', '')}
 
